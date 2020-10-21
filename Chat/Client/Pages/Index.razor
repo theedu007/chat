@@ -1,0 +1,125 @@
+﻿@page "/"
+@using Microsoft.AspNetCore.SignalR.Client
+@inject NavigationManager NavigationManager
+@implements IDisposable
+
+<div class="row">
+    <div class="chat-box w-100">
+        @if (!messages.Any())
+        {
+            <div class="d-flex flex-row">
+                <div class="col">
+                    Envia tus mensajes
+                </div>
+            </div>
+        }
+        else
+        {
+            foreach (var message in messages)
+            {
+                switch (message.MessageType)
+                {
+                    case MessageType.NewUserMessage:
+                        <div class="d-flex flex-row">
+                            <div class="col-12 text-center">
+                                @message.User ha entrado al chat
+                            </div>
+                        </div>
+                        break;
+                    case MessageType.ClientMessage:
+                        <div class="d-flex flex-row-reverse">
+                            <div class="col-6 text-right">
+                                @message.User: @message.Content
+                            </div>
+                        </div>
+
+                        break;
+                    case MessageType.ServerMessage:
+                        <div class="d-flex flex-row">
+                            <div class="col-6">
+                                @message.User: @message.Content
+                            </div>
+                        </div>
+                        break;
+                }
+            }
+        }
+    </div>
+</div>
+<div class="row">
+    <div class="input-box">
+        @if (isUserLogged)
+        {
+            <div class="row">
+                <div class="col-8">
+                    <input type="text" class="form-control" placeholder="Escriba su mensaje..." @bind="messageInput" />
+                </div>
+                <div class="col-4">
+                    <button class="btn btn-success" @onclick="SendMessage">Enviar</button>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="row">
+                <div class="col-6">
+                    <input type="text" class="form-control" placeholder="Nickname" @bind="userInput"/>
+                </div>
+                <div class="col-6">
+                    <button class="btn btn-success" @onclick="SetUsername">Entrar al chat</button>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private HubConnection hubConnection;
+    private string messageInput;
+    private string userInput;
+    private bool isUserLogged = false;
+    private List<Message> messages = new List<Message>();
+
+
+    protected override Task OnInitializedAsync()
+    {
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(NavigationManager.ToAbsoluteUri("/chat"))
+            .Build();
+
+        hubConnection.On<string, string>("ReciveMessage", (user, message) =>
+        {
+            var msg = new Message { User = user, Content = message, MessageType = MessageType.ServerMessage };
+            messages.Add(msg);
+            StateHasChanged();
+        });
+
+        hubConnection.On<string>("ReciveUsername", (user) =>
+        {
+            var message = new Message { User = user, MessageType = MessageType.NewUserMessage };
+            messages.Add(message);
+            StateHasChanged();
+        });
+
+        hubConnection.StartAsync();
+        return base.OnInitializedAsync();
+    }
+
+    Task SendMessage()
+    {
+        var message = new Message { User = userInput, Content = messageInput, MessageType = MessageType.ClientMessage };
+        messages.Add(message);
+        return Task.FromResult(hubConnection.SendAsync("SendMessage", userInput, messageInput));
+    }
+
+    Task SetUsername()
+    {
+        isUserLogged = true;
+        return Task.FromResult(hubConnection.SendAsync("SendUsername", userInput));
+    }
+
+    public void Dispose()
+    {
+        _ = hubConnection.DisposeAsync();
+    }
+}
